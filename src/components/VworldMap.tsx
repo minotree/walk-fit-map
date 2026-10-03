@@ -11,7 +11,6 @@ import VectorSource from 'ol/source/Vector';
 import VectorLayer from 'ol/layer/Vector';
 import { Style, Icon } from 'ol/style';
 
-console.log('[STEP 5] 🗺️ VworldMap.tsx 파일 로드 성공');
 
 export interface SiteSummary {
   id: string;
@@ -26,24 +25,24 @@ interface VworldMapProps {
 }
 
 export const VworldMap: React.FC<VworldMapProps> = ({ sites, onSelectSite }) => {
-  console.log('[STEP 6] 🧩 VworldMap 컴포넌트 렌더링');
+  
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<Map | null>(null);
 
   useEffect(() => {
-    console.log('[STEP 7] ⚡ VworldMap 지도 생성 useEffect 진입');
+    
 
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
     try {
       const apiKey = import.meta.env.VITE_VWORLD_API_KEY || 'YOUR_VWORLD_API_KEY';
-      console.log('[STEP 8] 🔑 Vworld API Key 확인완료');
+      
 
       const defaultLat = Number(import.meta.env.VITE_MAP_DEFAULT_LAT) || 37.5665;
       const defaultLng = Number(import.meta.env.VITE_MAP_DEFAULT_LNG) || 126.9780;
       const defaultZoom = Number(import.meta.env.VITE_MAP_DEFAULT_ZOOM) || 15;
 
-      console.log('[STEP 9] 🗺️ OpenLayers 지도 생성 시작');
+      
       const vworldTileLayer = new TileLayer({
         source: new XYZ({
           url: `https://api.vworld.kr/req/wmts/1.0.0/${apiKey}/Base/{z}/{y}/{x}.png`,
@@ -61,7 +60,7 @@ export const VworldMap: React.FC<VworldMapProps> = ({ sites, onSelectSite }) => 
       });
 
       mapInstanceRef.current = map;
-      console.log('[STEP 10] 🎉 OpenLayers 지도 생성 성공!');
+      
     } catch (error) {
       console.error('[ERROR] ❌ 지도 생성 오류:', error);
     }
@@ -75,7 +74,7 @@ export const VworldMap: React.FC<VworldMapProps> = ({ sites, onSelectSite }) => 
   }, []);
 
   useEffect(() => {
-    console.log('[STEP 11] 📍 마커 레이어 useEffect 진입');
+    
     const map = mapInstanceRef.current;
     if (!map) return;
 
@@ -106,8 +105,7 @@ export const VworldMap: React.FC<VworldMapProps> = ({ sites, onSelectSite }) => 
       });
 
       map.addLayer(vectorLayer);
-      console.log('[STEP 12] 📍 마커 렌더링 완료');
-
+      
       const handleMapClick = (evt: any) => {
         const feature = map.forEachFeatureAtPixel(evt.pixel, (feat) => feat);
         if (feature) {

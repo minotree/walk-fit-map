@@ -1,0 +1,7 @@
+{
+  "name": "walk-fit-map",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "react-vite"
+}

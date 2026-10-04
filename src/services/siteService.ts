@@ -14,6 +14,7 @@ export interface SiteDetail {
   amenity_note: string;
   last_verified_at: string | null;
   survey_location_id?: string | null;
+  site_image_path?: string | null; // <-- exercise_sites의 지점 대표 이미지 URL 또는 경로
   equipments: InstallationItem[];
 }
 
@@ -21,7 +22,6 @@ export interface InstallationItem {
   installationId: string;
   quantity: number;
   display_order: number;
-  site_image_path: string | null;
   equipmentId: string;
   name: string;
   model_name: string;
@@ -81,7 +81,7 @@ export async function getSiteDetail(siteId: string): Promise<SiteDetail | null> 
   try {
     console.log(`[siteService] 📡 getSiteDetail() 실행 - siteId: ${siteId}`);
 
-    // 1. 지점 기본 정보 조회
+    // 1. 지점 기본 정보 조회 (exercise_sites 단독 조회)
     const { data: siteData, error: siteError } = await supabase
       .from('exercise_sites')
       .select('*')
@@ -94,14 +94,31 @@ export async function getSiteDetail(siteId: string): Promise<SiteDetail | null> 
       return null;
     }
 
-    // 2. site_equipment 조회 (외래키 관계를 통한 카탈로그 정보 조인)
+    // 2. 지점 대표 이미지 경로 처리 (Supabase Storage 퍼블릭 URL 변환)
+    let finalSiteImagePath: string | null = null;
+    const rawImagePath = siteData.site_image_path;
+
+    if (rawImagePath) {
+      if (rawImagePath.startsWith('http://') || rawImagePath.startsWith('https://')) {
+        finalSiteImagePath = rawImagePath;
+      } else {
+        // 💡 핵심 수정: 현장 사진이 저장된 'survey-photos' 버킷을 기준으로 퍼블릭 URL 생성
+        const { data: urlData } = supabase.storage
+          .from('survey-photos')
+          .getPublicUrl(rawImagePath);
+        
+        finalSiteImagePath = urlData?.publicUrl || null;
+      }
+    }
+    console.log('[siteService] 🖼 최종 지점 대표 이미지 URL:', finalSiteImagePath);
+
+    // 3. site_equipment 조회 (외래키 관계를 통한 카탈로그 정보 조인)
     const { data: eqData, error: eqError } = await supabase
       .from('site_equipment')
       .select(`
         id,
         quantity,
         display_order,
-        site_image_path,
         is_published,
         equipment_id,
         equipment_catalog (
@@ -119,13 +136,8 @@ export async function getSiteDetail(siteId: string): Promise<SiteDetail | null> 
       console.error('[siteService] ⚠️ 설치 기구 조회 에러:', eqError);
     }
 
-console.log('siteId===========>>>', siteId);
-
-    console.log('[siteService] 📦 DB에서 조회된 raw site_equipment:', eqData);
-
     const rawEquipments = eqData || [];
     const equipments: InstallationItem[] = rawEquipments.map((item: any) => {
-      // Supabase 조인 결과가 배열 혹은 단일 객체로 올 수 있으므로 안전하게 처리
       const catalog = Array.isArray(item.equipment_catalog)
         ? item.equipment_catalog[0]
         : item.equipment_catalog;
@@ -134,7 +146,6 @@ console.log('siteId===========>>>', siteId);
         installationId: item.id,
         quantity: item.quantity || 1,
         display_order: item.display_order || 0,
-        site_image_path: item.site_image_path,
         equipmentId: item.equipment_id || catalog?.id || '',
         name: catalog?.name || '운동기구',
         model_name: catalog?.model_name || '',
@@ -151,6 +162,7 @@ console.log('siteId===========>>>', siteId);
       amenity_note: siteData.amenity_note || '',
       last_verified_at: siteData.last_verified_at,
       survey_location_id: siteData.survey_location_id,
+      site_image_path: finalSiteImagePath, // 변환된 퍼블릭 URL 적용
       equipments,
     };
   } catch (err) {
@@ -175,7 +187,6 @@ export async function getEquipmentDetail(
         id,
         site_id,
         quantity,
-        site_image_path,
         is_published,
         exercise_sites (
           id,
@@ -219,7 +230,7 @@ export async function getEquipmentDetail(
       equipmentName: catalog?.name || '운동기구',
       model_name: catalog?.model_name || '',
       quantity: data.quantity || 1,
-      site_image_path: data.site_image_path,
+      site_image_path: null,
       default_image_path: catalog?.default_image_path || null,
       instructions: catalog?.instructions || '등록된 운동 방법이 없습니다.',
       effects: catalog?.effects || '등록된 운동 효과가 없습니다.',

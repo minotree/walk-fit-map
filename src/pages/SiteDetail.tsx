@@ -7,171 +7,189 @@ import {
   IonContent,
   IonButtons,
   IonBackButton,
+  IonSpinner,
   IonCard,
-  IonCardHeader,
-  IonCardSubtitle,
-  IonCardTitle,
   IonCardContent,
-  IonList,
   IonItem,
   IonLabel,
   IonBadge,
-  IonSpinner,
-  useIonViewDidEnter
 } from '@ionic/react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getSiteDetail, SiteDetail as ISiteDetail } from '../services/siteService';
+import { getSiteDetail, SiteDetail as SiteDetailType } from '../services/siteService';
 
-// 화장실 / 식수대 한글 텍스트 변환 함수 (PRD 기준)
-const formatAmenityStatus = (status: 'yes' | 'no' | 'unknown') => {
-  switch (status) {
-    case 'yes':
-      return { text: '있음', color: 'success' };
-    case 'no':
-      return { text: '없음', color: 'danger' };
-    case 'unknown':
-    default:
-      return { text: '미확인', color: 'medium' };
-  }
-};
-
-const SiteDetailPage: React.FC = () => {
-  const { siteId } = useParams<{ siteId: string }>();
+const SiteDetail: React.FC = () => {
+  const { siteId } = useParams<{ siteId?: string }>();
   const navigate = useNavigate();
-  const [site, setSite] = useState<ISiteDetail | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
 
-  const fetchDetail = async () => {
+  const [site, setSite] = useState<SiteDetailType | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
     if (!siteId) {
-      console.warn('[SiteDetail.tsx] ⚠️ siteId가 전달되지 않았습니다.');
+      setErrorMsg('유효하지 않은 지점 ID입니다.');
       setLoading(false);
       return;
     }
 
-    console.log('[SiteDetail.tsx] 🚀 getSiteDetail 호출시도 - siteId:', siteId);
-    setLoading(true);
+    let isMounted = true;
+    const fetchSite = async () => {
+      setLoading(true);
+      setErrorMsg(null);
+      try {
+        const data = await getSiteDetail(siteId);
+        if (!isMounted) return;
 
-    try {
-      const data = await getSiteDetail(siteId);
-      console.log('[SiteDetail.tsx] 📦 지점 상세 수신 데이터:', data);
-      setSite(data);
-    } catch (err) {
-      console.error('[SiteDetail.tsx] ❌ 지점 상세 불러오기 예외 발생:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+        if (!data) {
+          setErrorMsg('이 지점 정보를 현재 볼 수 없습니다.');
+        } else {
+          setSite(data);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setErrorMsg('지점 정보를 불러오지 못했습니다.');
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
 
-  // 컴포넌트 마운트 시 실행
-  useEffect(() => {
-    fetchDetail();
+    fetchSite();
+    return () => {
+      isMounted = false;
+    };
   }, [siteId]);
 
-  // Ionic 화면 재진입 시 실행
-  useIonViewDidEnter(() => {
-    fetchDetail();
-  });
+  // 편의시설 상태 한글 매핑 헬퍼
+  const getStatusBadge = (status: 'yes' | 'no' | 'unknown') => {
+    switch (status) {
+      case 'yes':
+        return <IonBadge color="success">있음</IonBadge>;
+      case 'no':
+        return <IonBadge color="danger">없음</IonBadge>;
+      default:
+        return <IonBadge color="medium">미확인</IonBadge>;
+    }
+  };
 
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar color="primary">
+        <IonToolbar>
           <IonButtons slot="start">
-            <IonBackButton defaultHref="/home" text="지도" />
+            <IonBackButton defaultHref="/home" />
           </IonButtons>
-          <IonTitle>{site ? site.name : '지점 상세 정보'}</IonTitle>
+          <IonTitle>{site?.name || '지점 상세'}</IonTitle>
         </IonToolbar>
       </IonHeader>
 
-      <IonContent fullscreen style={{ backgroundColor: '#f4f5f8' }}>
+      <IonContent className="ion-padding">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '50px' }}>
             <IonSpinner name="crescent" />
-            <p style={{ marginTop: '12px', color: '#666' }}>시설 상세 정보를 불러오는 중입니다...</p>
           </div>
-        ) : !site ? (
-          <IonCard color="light">
-            <IonCardContent style={{ textAlign: 'center', padding: '30px' }}>
-              <h3>⚠️ 정보를 찾을 수 없습니다.</h3>
-              <p>비공개 처리되었거나 존재하지 않는 운동시설 지점입니다.</p>
-            </IonCardContent>
-          </IonCard>
-        ) : (
-          <div style={{ padding: '12px' }}>
-            {/* 1. 지점 기본 정보 카드 */}
-            <IonCard>
-              <IonCardHeader>
-                <IonCardTitle>{site.name}</IonCardTitle>
-                <IonCardSubtitle>{site.address_text || '주소 정보 없음'}</IonCardSubtitle>
-              </IonCardHeader>
+        ) : errorMsg ? (
+          <div style={{ textAlign: 'center', marginTop: '50px', color: '#666' }}>
+            <p>{errorMsg}</p>
+            <button
+              onClick={() => navigate('/home', { replace: true })}
+              style={{ marginTop: '10px', padding: '8px 16px', background: '#3880ff', color: '#fff', border: 'none', borderRadius: '4px' }}
+            >
+              지도로 돌아가기
+            </button>
+          </div>
+        ) : site ? (
+          <div>
+            {/* 1. 지점 대표 사진 영역 (survey-photos 버킷 연동) */}
+            {site.site_image_path && (
+              <div
+                style={{
+                  width: '100%',
+                  height: '200px',
+                  backgroundColor: '#f2f2f2',
+                  borderRadius: '8px',
+                  overflow: 'hidden',
+                  marginBottom: '16px',
+                }}
+              >
+                <img
+                  src={site.site_image_path}
+                  alt={site.name}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              </div>
+            )}
+
+            {/* 2. 지점 기본 정보 카드 */}
+            <IonCard style={{ margin: '0 0 16px 0' }}>
               <IonCardContent>
-                <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
+                <h2 style={{ fontWeight: 'bold', fontSize: '20px', color: '#333', marginBottom: '8px' }}>
+                  {site.name}
+                </h2>
+                <p style={{ fontSize: '14px', color: '#666', marginBottom: '12px' }}>
+                  {site.address_text || '주소 정보 없음'}
+                </p>
+
+                <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', fontSize: '14px' }}>
                   <div>
-                    <strong>🚽 화장실: </strong>
-                    <IonBadge color={formatAmenityStatus(site.toilet_status).color}>
-                      {formatAmenityStatus(site.toilet_status).text}
-                    </IonBadge>
+                    🚽 화장실: {getStatusBadge(site.toilet_status)}
                   </div>
                   <div>
-                    <strong>🚰 식수대: </strong>
-                    <IonBadge color={formatAmenityStatus(site.drinking_water_status).color}>
-                      {formatAmenityStatus(site.drinking_water_status).text}
-                    </IonBadge>
+                    💧 식수대: {getStatusBadge(site.drinking_water_status)}
                   </div>
                 </div>
 
                 {site.amenity_note && (
-                  <p style={{ margin: '8px 0', color: '#555' }}>
-                    📌 <strong>위치안내:</strong> {site.amenity_note}
+                  <p style={{ fontSize: '14px', color: '#444', marginBottom: '8px', whiteSpace: 'pre-line' }}>
+                    📍 위치안내: {site.amenity_note}
                   </p>
                 )}
 
                 {site.last_verified_at && (
-                  <p style={{ fontSize: '12px', color: '#888', marginTop: '12px' }}>
-                    🗓️ 현장 확인일: {site.last_verified_at}
+                  <p style={{ fontSize: '12px', color: '#888', margin: 0 }}>
+                    📅 현장 확인일: {site.last_verified_at}
                   </p>
                 )}
               </IonCardContent>
             </IonCard>
 
-            {/* 2. 설치된 운동기구 목록 */}
-            <IonCard>
-              <IonCardHeader>
-                <IonCardTitle style={{ fontSize: '18px' }}>
-                  🏋️ 설치된 운동기구 ({site.equipments ? site.equipments.length : 0}종)
-                </IonCardTitle>
-              </IonCardHeader>
-              <IonCardContent>
-                {!site.equipments || site.equipments.length === 0 ? (
-                  <p style={{ color: '#888' }}>등록된 운동기구 정보가 없습니다.</p>
-                ) : (
-                  <IonList lines="full">
-                    {site.equipments.map((item) => (
-                      <IonItem
-                        button
-                        key={item.installationId}
-                        onClick={() =>
-                          navigate(`/sites/${site.id}/equipment/${item.installationId}`)
-                        }
-                      >
-                        <IonLabel>
-                          <h2><strong>{item.name}</strong></h2>
-                          <p>{item.model_name ? `모델명: ${item.model_name}` : '기본 모델'}</p>
-                        </IonLabel>
-                        <IonBadge slot="end" color="primary">
-                          {item.quantity}대
-                        </IonBadge>
-                      </IonItem>
-                    ))}
-                  </IonList>
-                )}
-              </IonCardContent>
-            </IonCard>
+            {/* 3. 설치된 운동기구 목록 섹션 */}
+            <h3 style={{ fontSize: '18px', fontWeight: 'bold', margin: '0 0 12px 4px' }}>
+              설치된 운동기구 ({site.equipments.length}종)
+            </h3>
+
+            {site.equipments.length === 0 ? (
+              <IonCard style={{ margin: 0 }}>
+                <IonCardContent style={{ textAlign: 'center', color: '#888' }}>
+                  등록된 운동기구 정보가 없습니다.
+                </IonCardContent>
+              </IonCard>
+            ) : (
+              site.equipments.map((eq) => (
+                <IonCard
+                  key={eq.installationId}
+                  style={{ margin: '0 0 10px 0', cursor: 'pointer' }}
+                  onClick={() => navigate(`/sites/${site.id}/equipment/${eq.installationId}`)}
+                >
+                  <IonItem lines="none">
+                    <IonLabel>
+                      <h3 style={{ fontWeight: 'bold', fontSize: '16px' }}>{eq.name}</h3>
+                      <p style={{ color: '#666', fontSize: '13px' }}>
+                        모델명: {eq.model_name || '정보 없음'}
+                      </p>
+                    </IonLabel>
+                    <IonBadge slot="end" color="primary">
+                      {eq.quantity}대
+                    </IonBadge>
+                  </IonItem>
+                </IonCard>
+              ))
+            )}
           </div>
-        )}
+        ) : null}
       </IonContent>
     </IonPage>
   );
 };
 
-export default SiteDetailPage;
+export default SiteDetail;

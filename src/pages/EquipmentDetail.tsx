@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   IonPage,
   IonHeader,
@@ -7,129 +7,194 @@ import {
   IonContent,
   IonButtons,
   IonBackButton,
-  IonCard,
-  IonCardHeader,
-  IonCardSubtitle,
-  IonCardTitle,
-  IonCardContent,
-  IonBadge,
   IonSpinner,
-  useIonViewDidEnter
+  IonCard,
+  IonCardContent,
 } from '@ionic/react';
-import { useParams } from 'react-router-dom';
-import { getEquipmentDetail, EquipmentDetail as IEquipmentDetail } from '../services/siteService';
+import { useParams, useNavigate } from 'react-router-dom';
+import { getEquipmentDetail, EquipmentDetail } from '../services/siteService';
 
 const EquipmentDetailPage: React.FC = () => {
-  const { siteId, installationId } = useParams<{ siteId: string; installationId: string }>();
-  const [detail, setDetail] = useState<IEquipmentDetail | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const { siteId, installationId } = useParams<{ siteId?: string; installationId?: string }>();
+  const navigate = useNavigate();
 
-  const fetchDetail = async () => {
-    if (!siteId || !installationId) return;
-    setLoading(true);
-    const data = await getEquipmentDetail(siteId, installationId);
-    setDetail(data);
-    setLoading(false);
+  const [equipment, setEquipment] = useState<EquipmentDetail | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // 사진 대체 상태 관리: 'site' (현장) -> 'default' (공통) -> 'none' (준비 중)
+  const [imageStage, setImageStage] = useState<'site' | 'default' | 'none'>('site');
+
+  useEffect(() => {
+    if (!siteId || !installationId) {
+      setErrorMsg('유효하지 않은 접근입니다.');
+      setLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchDetail = async () => {
+      setLoading(true);
+      setErrorMsg(null);
+      try {
+        const data = await getEquipmentDetail(siteId, installationId);
+        if (!isMounted) return;
+
+        if (!data) {
+          setErrorMsg('이 기구 정보를 현재 볼 수 없습니다.');
+        } else {
+          setEquipment(data);
+          if (data.site_image_path) {
+            setImageStage('site');
+          } else if (data.default_image_path) {
+            setImageStage('default');
+          } else {
+            setImageStage('none');
+          }
+        }
+      } catch (err) {
+        if (isMounted) {
+          setErrorMsg('운동기구 정보를 불러오지 못했습니다.');
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    fetchDetail();
+    return () => {
+      isMounted = false;
+    };
+  }, [siteId, installationId]);
+
+  // 이미지 로딩 실패 시 다음 우선순위로 전환
+  const handleImageError = () => {
+    if (imageStage === 'site' && equipment?.default_image_path) {
+      setImageStage('default');
+    } else {
+      setImageStage('none');
+    }
   };
 
-  useIonViewDidEnter(() => {
-    fetchDetail();
-  });
+  // 이미지 URL 결정
+  const getImageUrl = () => {
+    if (imageStage === 'site' && equipment?.site_image_path) {
+      return equipment.site_image_path;
+    }
+    if ((imageStage === 'site' || imageStage === 'default') && equipment?.default_image_path) {
+      return equipment.default_image_path;
+    }
+    return null;
+  };
+
+  const currentImageUrl = getImageUrl();
+  const backHref = siteId ? `/sites/${siteId}` : '/home';
 
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar color="primary">
+        <IonToolbar>
           <IonButtons slot="start">
-            <IonBackButton defaultHref={`/sites/${siteId}`} text="지점 상세" />
+            <IonBackButton defaultHref={backHref} />
           </IonButtons>
-          <IonTitle>{detail ? detail.equipmentName : '기구 상세 정보'}</IonTitle>
+          <IonTitle>{equipment?.equipmentName || '기구 상세'}</IonTitle>
         </IonToolbar>
       </IonHeader>
 
-      <IonContent fullscreen style={{ backgroundColor: '#f4f5f8' }}>
+      <IonContent className="ion-padding">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: '50px' }}>
             <IonSpinner name="crescent" />
-            <p>기구 사용법 정보를 불러오는 중입니다...</p>
           </div>
-        ) : !detail ? (
-          <IonCard color="light">
-            <IonCardContent style={{ textAlign: 'center', padding: '30px' }}>
-              <h3>⚠️ 정보를 찾을 수 없습니다.</h3>
-              <p>비공개 처리되었거나 존재하지 않는 운동기구 항목입니다.</p>
-            </IonCardContent>
-          </IonCard>
-        ) : (
-          <div style={{ padding: '12px' }}>
-            {/* 1. 기구 제목 및 이미지 카드 */}
-            <IonCard>
-              {(detail.site_image_path || detail.default_image_path) && (
-                <img
-                  src={detail.site_image_path || detail.default_image_path || ''}
-                  alt={detail.equipmentName}
-                  style={{ width: '100%', maxHeight: '250px', objectFit: 'cover' }}
-                  onError={(e) => {
-                    // 이미지 로드 실패 시 대체 이미지 처리
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
+        ) : errorMsg ? (
+          <div style={{ textAlign: 'center', marginTop: '50px', color: '#666' }}>
+            <p>{errorMsg}</p>
+            <button
+              onClick={() => navigate(backHref, { replace: true })}
+              style={{ marginTop: '10px', padding: '8px 16px', background: '#3880ff', color: '#fff', border: 'none', borderRadius: '4px' }}
+            >
+              이전 화면으로 돌아가기
+            </button>
+          </div>
+        ) : equipment ? (
+          <div>
+            {/* 상단 지점 및 모델 정보 */}
+            <div style={{ marginBottom: '16px' }}>
+              <span style={{ fontSize: '14px', color: '#666' }}>{equipment.siteName}</span>
+              <h2 style={{ margin: '4px 0', fontSize: '20px', fontWeight: 'bold' }}>{equipment.equipmentName}</h2>
+              {equipment.model_name && (
+                <p style={{ margin: 0, fontSize: '14px', color: '#888' }}>모델명: {equipment.model_name}</p>
               )}
-              <IonCardHeader>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <IonCardTitle>{detail.equipmentName}</IonCardTitle>
-                  <IonBadge color="secondary">{detail.quantity}대 설치됨</IonBadge>
+            </div>
+
+            {/* 사진 영역 (우선순위: 현장 ➔ 공통 ➔ 준비 중) */}
+            <div
+              style={{
+                width: '100%',
+                height: '220px',
+                backgroundColor: '#f2f2f2',
+                borderRadius: '8px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                marginBottom: '20px',
+              }}
+            >
+              {currentImageUrl && imageStage !== 'none' ? (
+                <img
+                  src={currentImageUrl}
+                  alt={equipment.equipmentName}
+                  onError={handleImageError}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <div style={{ color: '#888', fontSize: '14px', textAlign: 'center' }}>
+                  <p style={{ margin: 0 }}>📸 사진 준비 중</p>
                 </div>
-                <IonCardSubtitle>
-                  {detail.siteName} {detail.model_name && `(${detail.model_name})`}
-                </IonCardSubtitle>
-              </IonCardHeader>
-            </IonCard>
+              )}
+            </div>
 
-            {/* 2. 운동 방법 카드 */}
-            <IonCard>
-              <IonCardHeader>
-                <IonCardTitle style={{ fontSize: '16px', color: '#1e88e5' }}>
-                  🏃 올바른 운동 방법
-                </IonCardTitle>
-              </IonCardHeader>
-              <IonCardContent style={{ whiteSpace: 'pre-line', lineHeight: '1.6' }}>
-                {detail.instructions || '등록된 운동 방법 설명이 없습니다.'}
+            {/* 운동 방법 카드 */}
+            <IonCard style={{ margin: '0 0 16px 0' }}>
+              <IonCardContent>
+                <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#333', marginBottom: '8px' }}>운동 방법</h3>
+                <p style={{ whiteSpace: 'pre-line', lineHeight: '1.5', color: '#444', margin: 0 }}>
+                  {equipment.instructions}
+                </p>
               </IonCardContent>
             </IonCard>
 
-            {/* 3. 운동 효과 카드 */}
-            <IonCard>
-              <IonCardHeader>
-                <IonCardTitle style={{ fontSize: '16px', color: '#2e7d32' }}>
-                  💪 운동 효과
-                </IonCardTitle>
-              </IonCardHeader>
-              <IonCardContent style={{ whiteSpace: 'pre-line', lineHeight: '1.6' }}>
-                {detail.effects || '등록된 운동 효과 설명이 없습니다.'}
+            {/* 운동 효과 카드 */}
+            <IonCard style={{ margin: '0 0 16px 0' }}>
+              <IonCardContent>
+                <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#333', marginBottom: '8px' }}>운동 효과</h3>
+                <p style={{ whiteSpace: 'pre-line', lineHeight: '1.5', color: '#444', margin: 0 }}>
+                  {equipment.effects}
+                </p>
               </IonCardContent>
             </IonCard>
 
-            {/* 4. 주의사항 카드 */}
-            {detail.precautions && (
-              <IonCard color="warning">
-                <IonCardHeader>
-                  <IonCardTitle style={{ fontSize: '16px' }}>⚠️ 사용 시 주의사항</IonCardTitle>
-                </IonCardHeader>
-                <IonCardContent style={{ whiteSpace: 'pre-line', lineHeight: '1.6' }}>
-                  {detail.precautions}
+            {/* 주의사항 카드 (존재할 경우에만 표시) */}
+            {equipment.precautions && (
+              <IonCard style={{ margin: '0 0 16px 0' }}>
+                <IonCardContent>
+                  <h3 style={{ fontWeight: 'bold', fontSize: '16px', color: '#eb445a', marginBottom: '8px' }}>주의사항</h3>
+                  <p style={{ whiteSpace: 'pre-line', lineHeight: '1.5', color: '#444', margin: 0 }}>
+                    {equipment.precautions}
+                  </p>
                 </IonCardContent>
               </IonCard>
             )}
 
-            {/* 출처 고지 */}
-            {detail.source_reference && (
-              <p style={{ padding: '0 10px', fontSize: '12px', color: '#888' }}>
-                ℹ️ 출처: {detail.source_reference}
-              </p>
+            {/* 출처 참고 */}
+            {equipment.source_reference && (
+              <div style={{ fontSize: '12px', color: '#888', textAlign: 'right', marginTop: '10px' }}>
+                설명 출처: {equipment.source_reference}
+              </div>
             )}
           </div>
-        )}
+        ) : null}
       </IonContent>
     </IonPage>
   );
